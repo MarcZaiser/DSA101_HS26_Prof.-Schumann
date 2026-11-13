@@ -28,7 +28,7 @@ nitrogen = Molecule(
     "nitrogen", "oxygen", activation_energy=200, color=Color(fill="#1e88e5", outline="#0d47a1"), radius=14
 )
 nitric_oxide = Molecule(
-    "NO", None, activation_energy=0, color=Color(fill="#1abc9c", outline="#148f77"), radius=22
+    "NO", None, activation_energy=200, color=Color(fill="#1abc9c", outline="#148f77"), radius=22
 )
 
 
@@ -96,6 +96,36 @@ class ChemicalSphere(Sphere):
         super().__init__(x, y, vx, vy, atom.radius, atom.color, atom.mass, gravity)
 
     def check_sphere_collision(self, other):
+        if isinstance(other, ChemicalSphere) and (
+            self.atom == nitric_oxide or other.atom == nitric_oxide
+        ):
+            dx = self.x - other.x
+            dy = self.y - other.y
+            distance = np.sqrt(dx**2 + dy**2)
+            kinetic_energy = 0.5 * self.mass * (self.vx**2 + self.vy**2)
+            kinetic_energy += 0.5 * other.mass * (other.vx**2 + other.vy**2)
+
+            if distance < self.radius + other.radius and kinetic_energy >= nitric_oxide.activation_energy:
+                product = self if self.atom == nitric_oxide else other
+                collision_partner = other if product is self else self
+                if distance == 0:
+                    nx, ny = 1, 0
+                else:
+                    nx, ny = dx / distance, dy / distance
+                if product is other:
+                    nx, ny = -nx, -ny
+
+                product.atom = oxygen
+                product.radius = oxygen.radius
+                product.color = oxygen.color
+                product.mass = oxygen.radius**2 if oxygen.mass is None else oxygen.mass
+                nitrogen_x = product.x + nx * (product.radius + nitrogen.radius + 1)
+                nitrogen_y = product.y + ny * (product.radius + nitrogen.radius + 1)
+                nitrogen_sphere = ChemicalSphere(
+                    nitrogen_x, nitrogen_y, product.vx, product.vy, nitrogen
+                )
+                return nitrogen_sphere
+
         if (
             not isinstance(other, ChemicalSphere)
             or self.atom == other.atom
@@ -205,15 +235,20 @@ class Simulation:
         return walls
 
     def update(self):
+        new_spheres = []
         for sphere in self.spheres:
             sphere.move()
             for wall in self.walls:
                 wall.check_collision(sphere)
             for other in self.spheres:
                 if sphere != other:
-                    sphere.check_sphere_collision(other)
+                    new_sphere = sphere.check_sphere_collision(other)
+                    if new_sphere is not None:
+                        new_spheres.append(new_sphere)
 
             sphere.equilibriate_temperature(self.temperature)
+
+        self.spheres.extend(new_spheres)
 
         # remove spheres that are out of bounds (inplace, https://stackoverflow.com/questions/1207406)
         self.spheres[:] = [
@@ -239,3 +274,4 @@ class Simulation:
             self.update()
             self.draw()
             time.sleep(0.002)
+
